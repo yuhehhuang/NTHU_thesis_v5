@@ -1,7 +1,7 @@
 import pandas as pd
 
 # === 載入你的 hungarian_W2_alpha1_real_data_rates.csv ===
-df = pd.read_csv("results/hungarian_W2_alpha1_real_data_rates.csv")
+df = pd.read_csv("results/hungarian_W3_alpha1_real_data_rates.csv")
 
 # ✅ 基本檢查：哪幾行 data rate 為 0
 df_zero = df[df["data_rate"] == 0]

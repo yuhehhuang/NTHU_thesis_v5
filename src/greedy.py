@@ -8,7 +8,6 @@ from src.utils import (
     check_visibility
 )
 
-# --- 與匈牙利一致的 blocking reason 常數 ---
 BLOCK_NO_PAIR      = "no_pair_available"
 BLOCK_NO_FEASIBLE  = "no_feasible_W_or_conflict"
 

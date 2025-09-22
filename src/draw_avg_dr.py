@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # ==== 參數設定（可自行修改）====
-W = 2
+W = 3
 alpha = 1
 folder_path = "results"  # 結果資料夾
 save_png = True
@@ -39,7 +39,7 @@ def infer_method_name(filepath: str) -> str:
     return os.path.splitext(base)[0]
 
 # ==== 計算每個方法的「平均 user data rate」====
-preferred_order = ["dp_opti", "dp", "ga", "greedy", "hungarian", "mslb", "hungarian_new"]
+preferred_order = ["dp", "ga", "greedy", "hungarian", "mslb"]
 method_to_avg = {}
 
 for file in files:
@@ -54,8 +54,6 @@ for file in files:
     per_user_mean = df.groupby("user_id")["data_rate"].mean()
     method_avg = per_user_mean.mean()
     method_to_avg[method] = float(method_avg)
-
-# ==== 上帝之手調整 ====
 
 # ==== 排序 ====
 ordered_methods = []

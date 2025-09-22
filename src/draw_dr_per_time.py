@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # ==== 參數設定 ====
-W = 2
+W = 3
 alpha = 1
 folder_path = "results"
 save_png = True
@@ -12,7 +12,7 @@ alpha_symbol = "\u03B1"
 out_png = f"total_system_throughput_W{W}_{alpha_symbol}{alpha}.png"
 
 # ==== 只顯示這幾種方法 ====
-methods_to_plot = ["dp_opti", "ga", "mslb", "greedy", "hungarian_new"]
+methods_to_plot = ["dp", "ga", "mslb", "greedy", "hungarian"]
 
 # ==== 搜尋符合條件的檔案 ====
 pattern = f"**/*_W{W}_alpha{alpha}_*data_rates.csv"
@@ -56,11 +56,11 @@ for file in files:
 methods = [m for m in methods_to_plot if m in method_to_series]
 
 method_markers = {
-    "dp_opti": "o",
+    "dp": "o",
     "ga": "D",
     "mslb": "X",
     "greedy": "^",
-    "hungarian_new": "P",
+    "hungarian": "P",
 }
 
 # ==== 畫圖 ====

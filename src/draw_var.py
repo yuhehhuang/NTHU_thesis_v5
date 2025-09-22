@@ -4,8 +4,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # ==== 參數設定 ====
-W = 2
-alpha = 1
+W = 3
+alpha = 0.75
 folder_path = "results"  # 結果資料夾
 save_png = True
 alpha_symbol = "\u03B1"  # α
@@ -38,7 +38,7 @@ for file in files:
     method_variances[method_name] = avg_var
 
 # ==== 固定方法順序 ====
-preferred_order = ["dp_opti", "dp", "ga", "greedy", "hungarian", "mslb", "hungarian_new"]
+preferred_order = [ "dp", "ga", "greedy", "hungarian", "mslb",]
 methods = [m for m in preferred_order if m in method_variances] + \
           [m for m in method_variances if m not in preferred_order]
 avg_vars = [method_variances[m] for m in methods]

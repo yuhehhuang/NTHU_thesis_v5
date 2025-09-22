@@ -104,12 +104,9 @@ def compute_blocking_stats(df_users: pd.DataFrame, df_results: pd.DataFrame):
     """
     回傳:
       df_blk: 每位使用者的 blocking 統計
-      overall_blocking_rate: 全體 blocked_slots / 全體 service_slots
+      overall_blocking_rate: 以「人」為單位的阻斷率
+         = 有至少一次被擋的使用者數 / 服務長度 > 0 的使用者總數
       reason_breakdown: （若 df_results 有 blocked/reason 欄位）各原因分布
-    需求:
-      df_users 需有 index=user_id, 欄位: t_start, t_end
-      df_results 需有欄位: user_id, time
-      （若有 blocked/reason 欄位，會更精準並提供原因統計）
     """
     if "user_id" not in df_results or "time" not in df_results:
         raise ValueError("df_results 必須包含 'user_id' 與 'time' 欄位")
@@ -119,7 +116,6 @@ def compute_blocking_stats(df_users: pd.DataFrame, df_results: pd.DataFrame):
     df_results["time"] = df_results["time"].astype(int)
 
     has_blocked = "blocked" in df_results.columns
-    # 取每位使用者「有被分配」的時槽集合
     if has_blocked:
         assigned_series = (
             df_results[df_results["blocked"] == False]
@@ -134,9 +130,8 @@ def compute_blocking_stats(df_users: pd.DataFrame, df_results: pd.DataFrame):
 
     rows = []
     total_len = 0
-    total_blocked = 0
+    total_blocked = 0  # 仍保留（若你還想要 slot-based 指標可用）
 
-    # 確保 t_start/t_end 是 int
     df_users_local = df_users.copy()
     df_users_local["t_start"] = df_users_local["t_start"].astype(int)
     df_users_local["t_end"] = df_users_local["t_end"].astype(int)
@@ -145,7 +140,6 @@ def compute_blocking_stats(df_users: pd.DataFrame, df_results: pd.DataFrame):
         t0, t1 = int(urow["t_start"]), int(urow["t_end"])
         service_set = set(range(t0, t1 + 1))
         assigned_set = assigned_series.get(uid, set())
-        # 只計算服務窗內的實際賦值
         assigned_in_window = len(assigned_set & service_set)
         blocked_slots = len(service_set) - assigned_in_window
 
@@ -161,7 +155,11 @@ def compute_blocking_stats(df_users: pd.DataFrame, df_results: pd.DataFrame):
         total_blocked += blocked_slots
 
     df_blk = pd.DataFrame(rows).sort_values("user_id").reset_index(drop=True)
-    overall_blocking_rate = (total_blocked / total_len) if total_len > 0 else 0.0
+
+    # NEW: 以「人」為單位的阻斷判定與總體比例
+    df_blk["is_blocked_any"] = (df_blk["service_len"] > 0) & (df_blk["blocked_slots"] > 0)  # 至少一次中斷
+    eligible_users = int((df_blk["service_len"] > 0).sum())  # 有實際服務區間的人
+    overall_blocking_rate = (int(df_blk["is_blocked_any"].sum()) / eligible_users) if eligible_users > 0 else 0.0
 
     reason_breakdown = None
     if has_blocked and "reason" in df_results.columns:
@@ -174,6 +172,7 @@ def compute_blocking_stats(df_users: pd.DataFrame, df_results: pd.DataFrame):
             reason_breakdown = pd.DataFrame(columns=["reason", "count", "pct"])
 
     return df_blk, overall_blocking_rate, reason_breakdown
+
 
 
 def compute_timewise_blocking_rate(df_users: pd.DataFrame, df_results: pd.DataFrame):

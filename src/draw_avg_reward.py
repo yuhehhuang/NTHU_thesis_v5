@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # ==== 參數設定 ====
-W = 2
+W = 3
 alpha = 1
 folder_path = "."  # avg_reward_W{W}_alpha{alpha}.csv 的位置
 column_to_plot = "avg_reward_per_user"  # "avg_reward_overall" 或 "avg_reward_per_user"
@@ -24,7 +24,7 @@ if column_to_plot not in df.columns:
 df.loc[df["method"] == "mslb",   column_to_plot] *= 0.97
 ##########################################
 # ==== 固定方法順序（沒列到的接在後面）====
-preferred_order = ["dp_opti", "dp", "ga", "greedy", "hungarian", "mslb", "hungarian_new"]
+preferred_order = ["dp", "ga", "greedy", "hungarian", "mslb"]
 ordered_methods = [m for m in preferred_order if m in df["method"].tolist()] + \
                   [m for m in df["method"].tolist() if m not in preferred_order]
 

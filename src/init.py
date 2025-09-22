@@ -10,7 +10,7 @@ def init_sat_channel_all(
     num_channels=25,
     randomize=True,
     max_background_users=15,
-    background_non_interf_prob=0.8
+    background_non_interf_prob=1
 ):
     """
     初始化每顆衛星每個 channel 的使用狀態
@@ -27,7 +27,7 @@ def init_sat_channel_all(
 
         if randomize:
             # 每個衛星有 10 ~ min(max_background_users, num_channels) 個 channel 被背景佔用
-            k = random.randint(10, min(max_background_users, num_channels))
+            k = random.randint(12, min(max_background_users, num_channels))
             used_channels = random.sample(range(num_channels), k=k)
             for ch in used_channels:
                 # 隨機決定是否標為 non-interfering (2) 或 interfering (1)
@@ -38,9 +38,22 @@ def init_sat_channel_all(
 
     return sat_channel_dict
 
-def load_system_data(regenerate_sat_channels=True, sat_channel_path="data/sat_channel_dict_backup.pkl"):
+def load_system_data(regenerate_sat_channels=False,
+                     sat_channel_path="data/sat_channel_dict_backup.pkl",
+                     user_csv_path=None):
+    # 支援外部指定 user csv 路徑
+    # 優先順序：
+    #  1) user_csv_path 參數（若呼叫時傳入）
+    #  2) 環境變數 USER_CSV（如果你想用 env 指定）
+    #  3) 預設 data/user_info.csv（原本行為）
+    if user_csv_path is None:
+        user_csv_path = os.environ.get("USER_CSV", "data/user_info.csv")
+
+    if not os.path.exists(user_csv_path):
+        raise FileNotFoundError(f"找不到 user CSV: {user_csv_path}. 請先用 user.py 產生，或指定 user_csv_path 參數。")
+
     # === 讀取 User 資料 ===
-    df_users = pd.read_csv("data/user_info.csv")
+    df_users = pd.read_csv(user_csv_path)
 
     # === 讀取 Access Matrix ===
     df_access = pd.read_csv("data/access_matrix.csv")
@@ -80,7 +93,7 @@ def load_system_data(regenerate_sat_channels=True, sat_channel_path="data/sat_ch
             satellites=all_satellites,
             num_channels=params["num_channels"],
             randomize=True,
-            max_background_users=15
+            max_background_users=2
         )
         with open(sat_channel_path, "wb") as f:
             pickle.dump(sat_channel_dict_backup, f)

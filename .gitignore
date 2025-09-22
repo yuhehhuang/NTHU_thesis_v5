@@ -1,5 +1,10 @@
 *.pkl
-*.csv
 *.pyc
 __pycache__/
 data/satellite_positions.pkl
+tmp.py
+test.py
+test_match.py
+iykyk.py
+channel_usage_analysis.csv
+

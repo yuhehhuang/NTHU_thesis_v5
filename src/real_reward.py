@@ -4,7 +4,7 @@ import glob
 import pandas as pd
 
 # ================== 參數設定（自行修改） ==================
-W = 2
+W = 3
 alpha = 1
 folder_path = "results"        # 你的結果都在這裡
 out_csv = f"avg_reward_W{W}_alpha{alpha}.csv"

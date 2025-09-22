@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # ==== 參數設定 ====
-W = 2
+W = 3
 alpha = 1
 folder_path = "results"
 save_png = True
@@ -12,7 +12,7 @@ alpha_symbol = "\u03B1"
 out_png = f"variance_over_time_W{W}_{alpha_symbol}{alpha}.png"
 
 # 只保留這些方法
-methods_to_plot = ["dp_opti", "greedy", "hungarian_new", "mslb", "ga"]
+methods_to_plot = ["dp", "greedy", "hungarian", "mslb", "ga"]
 
 # ==== 搜尋檔案 ====
 pattern = f"**/*_W{W}_alpha{alpha}_*load_by_time.csv"

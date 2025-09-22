@@ -31,14 +31,6 @@ def _vis_range(df_access, sat, t0, t1, time_slots):
     return True
 
 def run_hungarian_per_W(df_users, df_access, path_loss, sat_channel_dict_backup, sat_positions, params, W):
-    """
-    變更：在每個 time t，把候選使用者分成兩批，先配第一批、落地更新，再配第二批。
-    分批策略：依剩餘服務時間 (t_end - t) 由小到大排序後 50/50 切分。
-    """
-    # ===== 可調策略 =====
-    SPLIT_POLICY = "edf"   # "edf": 依剩餘時間短優先；"uid": 以 user_id 排序
-    SPLIT_RATIO  = 0.5     # 第一批佔比（0.5 = 一半一半）
-
     time_slots  = len(df_access)
     alpha       = params["alpha"]
 
@@ -55,23 +47,33 @@ def run_hungarian_per_W(df_users, df_access, path_loss, sat_channel_dict_backup,
     data_rate_records = []
     load_by_time = defaultdict(lambda: defaultdict(int))
 
-    # -------- 封裝：對「一批使用者」在當前 t 做一次匈牙利分配並落地 --------
-    def process_batch_at_t(t, batch_users):
-        nonlocal sat_load_dict, user_assignments, user_last_pair, user_last_ho_time, user_next_time, user_release_time, data_rate_records, load_by_time
+    for t in range(time_slots):
+        # A) 釋放到期：t == release_t + 1 → 釋放該 user 本輪用到的 (sat,ch) 為 0
+        to_free = [uid for uid, t_last in user_release_time.items() if t == t_last + 1]
+        for uid in to_free:
+            used_pairs = {(s, c) for (tt, s, c) in user_assignments[uid] if tt <= user_release_time[uid]}
+            for sat, ch in used_pairs:
+                if sat in sat_load_dict and ch in sat_load_dict[sat]:
+                    sat_load_dict[sat][ch] = 0
+            del user_release_time[uid]
 
-        if not batch_users:
-            return
+        # B) 候選使用者：新進（t_start==t）或上次鎖窗結束（user_next_time==t）
+        new_users    = df_users[df_users["t_start"] == t].index.tolist()
+        resume_users = [uid for uid, tnext in user_next_time.items() if tnext == t]
+        candidate_users = list({*new_users, *resume_users})
+        if not candidate_users:
+            continue
 
-        # 這個 t 可見衛星
+        # C) 這個 t 可見衛星
         row = df_access[df_access["time_slot"] == t]
         if row.empty:
-            for uid in batch_users:
+            for uid in candidate_users:
                 mark_block(data_rate_records, uid, t, BLOCK_NO_PAIR)
-            return
+            continue
         vis_t = row["visible_sats"].iloc[0]
         if isinstance(vis_t, str): vis_t = ast.literal_eval(vis_t)
 
-        # 全域候選 (sat,ch)：state==0 且此刻 t 可見
+        # D) 全域候選 (sat,ch)：state==0 且「此刻 t 可見」
         global_pairs = []
         seen_pairs = set()
         for sat in vis_t:
@@ -81,13 +83,12 @@ def run_hungarian_per_W(df_users, df_access, path_loss, sat_channel_dict_backup,
                 if (sat, ch) in seen_pairs: continue
                 seen_pairs.add((sat, ch))
                 global_pairs.append((sat, ch))
-
         if not global_pairs:
-            for uid in batch_users:
+            for uid in candidate_users:
                 mark_block(data_rate_records, uid, t, BLOCK_NO_PAIR)
-            return
+            continue
 
-        # pair 的 t 當下 score
+        # E) pair 的 t 當下 score
         pair_score = {}
         for j, (sat, ch) in enumerate(global_pairs):
             _, rate = compute_sinr_and_rate(params, path_loss, sat, t, sat_load_dict, ch)
@@ -95,13 +96,13 @@ def run_hungarian_per_W(df_users, df_access, path_loss, sat_channel_dict_backup,
             load_ratio = compute_sat_load(sat_load_dict[sat])
             pair_score[j] = (1 - alpha * load_ratio) * rate
 
-        # cost matrix（關鍵：僅在「換手」時鎖 W；續用只鎖 1 slot）
-        n_users = len(batch_users)
+        # F) cost matrix（關鍵修改：僅在「換手」時鎖 W；續用只鎖 1 slot）
+        n_users = len(candidate_users)
         n_pairs = len(global_pairs)
         cost = np.full((n_users, n_pairs), 1e9)
         user_t_last = {}
 
-        for i, uid in enumerate(batch_users):
+        for i, uid in enumerate(candidate_users):
             t_end = int(df_users.loc[uid, "t_end"])
             last_ho = user_last_ho_time.get(uid, None)
             can_handover = (last_ho is None) or (t - last_ho >= W)
@@ -125,17 +126,17 @@ def run_hungarian_per_W(df_users, df_access, path_loss, sat_channel_dict_backup,
                 try:
                     j = global_pairs.index((sat0, ch0))
                 except ValueError:
-                    continue  # 這個 pair 不在「可用集合」 → 不可行
+                    continue  # 這個 pair 不是 state==0 → 不可行
                 if (j in pair_score) and _vis_range(df_access, sat0, t, t_last, time_slots):
                     cost[i, j] = -pair_score[j]
 
-        # 整列不可行 → no_feasible
+        # G) 標整列不可行 → no_feasible
         row_min = cost.min(axis=1)
-        infeasible = {batch_users[i] for i, v in enumerate(row_min) if v > 1e8}
+        infeasible = {candidate_users[i] for i, v in enumerate(row_min) if v > 1e8}
         for uid in infeasible:
             mark_block(data_rate_records, uid, t, BLOCK_NO_FEASIBLE)
 
-        # 匈牙利配對 + 去重
+        # H) 匈牙利配對 + 去重
         row_ind, col_ind = linear_sum_assignment(cost)
         claimed = set()
         matched = []
@@ -146,8 +147,9 @@ def run_hungarian_per_W(df_users, df_access, path_loss, sat_channel_dict_backup,
             claimed.add((sat, ch))
             matched.append((i, j))
 
-        # 容量閘門（保險：以空閒 channel 數為上限）
-        free_cap = {sat: sum(1 for v in sat_load_dict.get(sat, {}).values() if v == 0) for sat in vis_t}
+        # I) 容量閘門（每衛星這個 t 可用 0-channel 上限）
+        free_cap = {sat: sum(1 for v in sat_load_dict.get(sat, {}).values() if v == 0)
+                    for sat in vis_t}
         by_sat = defaultdict(list)  # sat -> [(i,j,score)]
         for i, j in matched:
             sat, ch = global_pairs[j]
@@ -160,19 +162,19 @@ def run_hungarian_per_W(df_users, df_access, path_loss, sat_channel_dict_backup,
             keep, drop = lst[:k], lst[k:]
             kept.extend((i, j) for (i, j, _) in keep)
             for (i, j, _) in drop:
-                uid = batch_users[i]
+                uid = candidate_users[i]
                 if uid not in infeasible:
                     mark_block(data_rate_records, uid, t, BLOCK_CAPACITY)
 
-        assigned_uids = {batch_users[i] for (i, j) in kept}
-        for i, uid in enumerate(batch_users):
+        assigned_uids = {candidate_users[i] for (i, j) in kept}
+        for i, uid in enumerate(candidate_users):
             if uid in infeasible or uid in assigned_uids: continue
             if row_min[i] <= 1e8:
                 mark_block(data_rate_records, uid, t, BLOCK_CAPACITY)
 
-        # 落地：鎖 [t..t_last]，僅「換手」更新 last_handover_t；續用不更新
+        # J) 落地：鎖 [t..t_last]，僅「換手」更新 last_handover_t；續用不更新
         for i, j in kept:
-            uid = batch_users[i]
+            uid = candidate_users[i]
             sat, ch = global_pairs[j]
             t_last = user_t_last[uid]
 
@@ -180,7 +182,6 @@ def run_hungarian_per_W(df_users, df_access, path_loss, sat_channel_dict_backup,
             did_ho = (prev_pair is None) or (prev_pair != (sat, ch))
             if did_ho:
                 user_last_ho_time[uid] = t  # 只在換手時更新
-
             # 鎖 channel
             sat_load_dict[sat][ch] = 1
             user_last_pair[uid] = (sat, ch)
@@ -197,40 +198,6 @@ def run_hungarian_per_W(df_users, df_access, path_loss, sat_channel_dict_backup,
                 load_by_time[tt][sat] += 1
                 user_assignments[uid].append((tt, sat, ch))
 
-    # ======================= 主流程 =======================
-    for t in range(time_slots):
-        # A) 釋放到期：t == release_t + 1 → 釋放該 user 本輪用到的 (sat,ch) 為 0
-        to_free = [uid for uid, t_last in user_release_time.items() if t == t_last + 1]
-        for uid in to_free:
-            used_pairs = {(s, c) for (tt, s, c) in user_assignments[uid] if tt <= user_release_time[uid]}
-            for sat, ch in used_pairs:
-                if sat in sat_load_dict and ch in sat_load_dict[sat]:
-                    sat_load_dict[sat][ch] = 0
-            del user_release_time[uid]
-
-        # B) 候選使用者：新進（t_start==t）或上次鎖窗結束（user_next_time==t）
-        new_users    = df_users[df_users["t_start"] == t].index.tolist()
-        resume_users = [uid for uid, tnext in user_next_time.items() if tnext == t]
-        candidate_users = list({*new_users, *resume_users})
-        if not candidate_users:
-            continue
-
-        # ====== 分兩批：先配第一批，再配第二批（以更新後資源）======
-        if SPLIT_POLICY == "edf":
-            # 依剩餘服務時間 (t_end - t) 由小到大
-            candidate_users.sort(key=lambda u: int(df_users.loc[u, "t_end"]) - t)
-        elif SPLIT_POLICY == "uid":
-            candidate_users.sort()
-
-        k = max(1, int(len(candidate_users) * SPLIT_RATIO))
-        batch1 = candidate_users[:k]
-        batch2 = candidate_users[k:]
-
-        # 第一批
-        process_batch_at_t(t, batch1)
-        # 第二批（用第一批落地後的 sat_load_dict 重新計算）
-        process_batch_at_t(t, batch2)
-
     # === 輸出 ===
     df_results = pd.DataFrame(data_rate_records)
 
@@ -243,8 +210,7 @@ def run_hungarian_per_W(df_users, df_access, path_loss, sat_channel_dict_backup,
         req_s = int(df_users.loc[uid, "t_start"]); req_e = int(df_users.loc[uid, "t_end"])
         assigned_times = {tt for (tt, _, _) in entries}
         success = all(tt in assigned_times for tt in range(req_s, req_e + 1))
-        reward = sum(r["data_rate"] for r in data_rate_records
-                     if (r.get("user_id") == uid and not r.get("blocked", False)))
+        reward = sum(r["data_rate"] for r in data_rate_records if (r.get("user_id")==uid and not r.get("blocked", False)))
         paths.append([uid, str(path_list), t_begin, t_end, success, reward])
 
     df_paths = pd.DataFrame(paths, columns=["user_id","path","t_begin","t_end","success","reward"])

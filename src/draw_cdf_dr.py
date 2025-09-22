@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # ==== 參數設定 ====
-W = 2
+W = 3
 alpha = 1
 folder_path = "results"
 alpha_symbol = "\u03B1"
@@ -13,7 +13,7 @@ pattern = f"**/*_W{W}_alpha{alpha}_*data_rates.csv"
 files = glob.glob(os.path.join(folder_path, pattern), recursive=True)
 
 # ✅ 只保留這些方法
-selected_methods = ["dp_opti", "ga", "greedy", "mslb", "hungarian_new"]
+selected_methods = ["dp", "ga", "greedy", "mslb", "hungarian"]
 
 def infer_method_name(filepath: str) -> str:
     base = os.path.basename(filepath)
